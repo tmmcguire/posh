@@ -1,10 +1,15 @@
 use "collections"
 use "net"
 
+use @isatty[ISize](fd: ISize) if posix
+
 actor Main
   new create(env: Env) =>
     env.out.print("hello, world")
     env.input(StdinReader(env))
+    ifdef posix then
+      env.out.print(@isatty[ISize](ISize(0)).string())
+    end
 
 class iso StdinReader is StdinNotify
   let _env: Env
