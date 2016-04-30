@@ -1,65 +1,68 @@
-use "collections"
-use "net"
+use "term"
+use "promises"
 
 actor Main
   new create(env: Env) =>
-    env.out.print("hello, world")
-    env.input(StdinReader(env))
+    env.out.print("Use 'quit' to exit.")
+    let handler = recover ReadlineHandler end
+    handler.set_linehandler(LineHandler(env))
+    let term = ANSITerm(Readline(consume handler, env.out), env.input)
+    term.prompt("0 $ ")
+    let notify = object iso
+      let term: ANSITerm = term
+      fun ref apply(data: Array[U8] iso) => term(consume data)
+      fun ref dispose() => term.dispose()
+    end
+    env.input(consume notify)
 
-class iso StdinReader is StdinNotify
+class ReadlineHandler is ReadlineNotify
+  let _commands: Array[String] = _commands.create()
+  var _handler: (LineHandler tag | None) = None
+  var _i: U64 = 0
+
+  new create() =>
+    _commands.push("quit")
+    _commands.push("happy")
+    _commands.push("hello")
+
+  fun ref apply(line: String, prompt: Promise[String]) =>
+    if line == "quit" then
+      prompt.reject()
+    else
+      _i = _i + 1
+      prompt(_i.string() + " $ ")
+    end
+    _update_commands(line)
+    try
+      (_handler as LineHandler)(line)
+    end
+
+  fun ref set_linehandler(handler: LineHandler tag) =>
+    _handler = handler
+
+  fun ref _update_commands(line: String) =>
+    for command in _commands.values() do
+      if command.at(line, 0) then
+        return
+      end
+    end
+    _commands.push(line)
+
+  fun ref tab(line: String): Seq[String] box =>
+    let r = Array[String]
+    for command in _commands.values() do
+      if command.at(line, 0) then
+        r.push(command)
+      end
+    end
+
+    r
+
+actor LineHandler
   let _env: Env
-  let _buf: Buffer = Buffer
-  var _closed: Bool = false
 
-  new iso create(env: Env) =>
+  new create(env: Env) =>
     _env = env
 
-  fun ref apply(data: Array[U8] iso) =>
-    """
-    Append data to a buffer until a legitimate eol is seen, then pass the line
-    off to the executor and start a new buffer.
-    """
-    _env.out.write("apply " + data.size().string())
-    try
-      for i in Range(0, data.size()) do
-        _env.out.write(" " + data(i).string())
-      end
-    end
-    _env.out.print("")
-    if _closed then
-      return
-    end
-    // let data': Array[U8] val = consume data
-    // let eol = _has_char(data', '\n')
-    // _buf.append(data')
-    // if eol then
-    //   try
-    //     _env.out.print(_buf.line())
-    //   end
-    // end
-    // if _has_char(data', 4) then
-    //   _env.input.dispose()
-    //   _closed = true
-    // end
-
-  fun ref dispose() =>
-    """
-    Terminate the reader.
-    """
-    _env.out.print("dispose")
-    while _buf.size() > 0 do
-      try
-        _env.out.print(_buf.line())
-      end
-    end
-    None
-
-  fun _has_char(data: Array[U8] box, ch: U8): Bool =>
-    try
-      for i in Range(0, data.size()) do
-        if data(i) == ch then
-          return true
-        end
-      end
-    end
-    false
+  be apply(line: String) =>
+    _env.out.print(line)
